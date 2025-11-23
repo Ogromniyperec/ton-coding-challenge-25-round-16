@@ -1,0 +1,33 @@
+;; Filename: FailureExecutor.tlk
+;; Contract B: Receives the command and executes a guaranteed failure process.
+;; 合约 B：接收命令并执行保证失败的流程。
+
+#include "stdlib.tlk"
+
+;; Internal function that executes the failure
+() execute_failure_and_terminate() impure {
+    
+    ;; Check flags to ignore bounces
+    slice msg_slice = in_msg_full().begin_parse(); 
+    int flags = msg_slice.load_uint(6);
+    
+    if (flags & 1) {
+        "FailureExecutor: Received a bounce, ignoring." print;
+        return;
+    }
+    
+    ;; --- RichBounce Trigger ---
+    
+    "FailureExecutor: Command received. Executing critical failure (Error Code 11111)." print;
+    
+    ;; **Action:** Use throw with a new, unique error code (11111)
+    ;; This triggers the RichBounce mechanism back to the sender (TxnController).
+    throw(11111); 
+    
+    ;; Execution halts here.
+}
+
+;; Standard entry point
+() recv_internal(int balance, int msg_value, cell in_msg_full, cell in_msg_body) impure {
+    execute_failure_and_terminate();
+}
