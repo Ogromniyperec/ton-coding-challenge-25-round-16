@@ -1,0 +1,64 @@
+;; Filename: TxnController.tlk
+;; Contract A: Controls the transaction flow (sends command) and monitors for error feedback (RichBounce).
+;; 合约 A：控制交易流程 (发送命令) 并监听错误反馈 (RichBounce)。
+
+#include "stdlib.tlk"
+
+;; RichBounce Error Feedback Processor
+() process_error_feedback(cell feedback_cell) impure inline {
+    
+    ;; Store the raw error cell in c0 for inspection
+    c0 = feedback_cell;
+    
+    ;; Log the successful capture
+    "TxnController: Error feedback (RichBounce) captured successfully. Command failed as expected." print;
+    
+    ;; Analyze the error OP code 
+    slice data_s = feedback_cell.begin_parse();
+    int op_code = data_s.load_uint(32); 
+    "Feedback Op Code:" print_int; op_code print_int;
+    
+    return;
+}
+
+;; Main receiver function
+() recv_internal(int balance, int msg_value, cell in_msg_full, cell in_msg_body) impure {
+    
+    ;; Step 1: Check for Error Feedback (Bounce)
+    slice header_slice = in_msg_full.begin_parse();
+    int flags = header_slice.load_uint(6);
+    
+    if (flags & 1) {
+        ;; Process the RichBounce
+        process_error_feedback(in_msg_body);
+        return;
+    }
+    
+    ;; --- Step 2: Send Command to Executor ---
+    
+    ;; Target address B (Unique Placeholder: 0xBAD5FADE)
+    cell target_b_addr_cell = begin_cell().store_uint(0xBAD5FADE, 32).end_cell(); 
+    slice target_b_addr = target_b_addr_cell.begin_parse();
+
+    ;; Create the command body with a unique op code (0xBADF00D5)
+    cell command_body = begin_cell()
+        .store_uint(0xBADF00D5, 32) ;; Unique Command op code
+        .store_ref(in_msg_body)     ;; Embed the original payload as a reference
+        .end_cell();
+
+    ;; Send the message to B. 
+    ;; Use Mode 66 (64 | 2): 64 for paying storage fees, 2 for keeping the value and returning gas. Bounceable by default.
+    send_raw_message(
+        begin_cell()
+            .store_slice(target_b_addr)
+            .store_coins(20000) ;; Send 0.00002 TON
+            .store_uint(0, 1 + 4 + 4 + 64 + 32 + 1 + 1)
+            .store_uint(0, 1) ;; no init
+            .store_uint(0, 1) ;; no data
+            .store_ref(command_body)
+        .end_cell(), 
+        66 
+    );
+
+    "TxnController: Command sent (OP: 0xBADF00D5). Awaiting error feedback." print;
+}
